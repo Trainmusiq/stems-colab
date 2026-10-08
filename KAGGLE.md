@@ -46,6 +46,7 @@ En el panel derecho del notebook:
 ## 5. Ajustar la configuración
 La primera celda de código es la configuración. En Kaggle no hay formularios: se editan los valores en el texto. Por ejemplo:
 ```python
+ACCION = "procesar todo" # o "solo clic" (clic de temas ya procesados, sin GPU; ver paso 8)
 MODO = "karaoke"        # o "completo"
 REFERENCIA = "440 Hz"
 FORMATO = "FLAC 24-bit"
@@ -69,12 +70,40 @@ Tiempos aproximados: unos 2–2,5 min por minuto de canción en modo completo y 
 ## 7. Descargar los resultados
 1. Abre la versión terminada del notebook › pestaña **Output**.
 2. El Output contiene **solo** esto:
-   - `stems/zips/<tema>.zip`: **un zip por tema**. Trae la carpeta del tema: stems numerados para el DAW, `afinacion.txt`, `guitarras.txt` y el manifiesto.
+   - `stems/zips/<tema>.zip`: **un zip por tema**. Trae la carpeta del tema: stems numerados para el DAW, `afinacion.txt`, `guitarras.txt`, el manifiesto y la carpeta **`clic/`** (ver sección 8).
    - `stems/salida/progreso.txt`: tabla resumen, avisos ⚠ de afinación y lista de zips.
    - `stems/salida/errores.txt`: solo si algún tema falló.
 3. Descarga los zips con el botón de descarga de cada archivo.
 
 Los stems sueltos y los modelos no aparecen en el Output: viven en `/kaggle/temp` y se pierden al terminar, a propósito.
+
+## 8. El clic
+Cada tema trae `clic/`, que está fuera de los stems sumables y no entra en la prueba de cancelación:
+- `clic.flac`: el clic, con el mismo largo, frecuencia y formato que los stems. Empieza en la muestra 0, así que va alineado con desfase 0. Suena un tono agudo en el 1 de cada compás y uno medio en los demás pulsos.
+- `clic_marcas.csv`: cada pulso con sus segundos, su muestra, si es el 1 del compás, el compás, el tiempo y la confianza.
+- `clic.mid`: el mapa de tempo, los compases y una nota por pulso, **para Reaper**.
+- `clic_marcadores_reaper.csv`: un marcador por pulso, para corregir a mano en Reaper.
+- `clic_informe.txt`: las **zonas dudosas** en mm:ss (cambios bruscos, huecos, rubato, baja confianza, partes sin batería) y los pasos para importarlo en Reaper 7.
+- **Ableton Live 10** no importa mapas de tempo desde MIDI: ahí usa `clic.flac`, con Warp desactivado.
+
+### Hacer solo el clic de temas ya procesados (sin GPU)
+1. Agrega como Input los zips ya procesados. Sirve un Dataset con los `<tema>.zip` o, más fácil, el **Output de una versión anterior** de este notebook: **+ Add Input › Your Work** (o *Notebooks*) › elige el notebook y su versión.
+2. En la configuración: `ACCION = "solo clic"`.
+3. *Session options › Accelerator*: puede quedar en **None**, porque el clic corre en CPU. Internet debe seguir **On** (se descarga Beat This!).
+4. **Save & Run All**. El notebook:
+   - descomprime cada zip en `/kaggle/temp`;
+   - suma los stems para reconstruir la mezcla afinada y la verifica contra «00 Mezcla afinada» y el manifiesto;
+   - genera el clic sin volver a separar ni afinar.
+5. En el Output queda **`stems/zips/<tema>.clic.zip`**, con solo la carpeta `<tema>/clic/`. Los stems no se vuelven a empaquetar.
+
+### Corregir el clic a mano en Reaper y usar tus marcas
+1. En Reaper 7 sigue los pasos de `clic_informe.txt`: importar `clic.mid` con su mapa de tempo, poner los marcadores y moverlos.
+2. **Convención:** el marcador del 1 de cada compás se llama **`C<número>`** (C1, C2…). Los demás pulsos pueden tener cualquier nombre.
+3. Pon la regla de Reaper en **Minutos:Segundos** y exporta los marcadores desde *Ver › Gestor de regiones/marcadores › clic derecho › Export…* con el nombre **`<tema>.clic.csv`**.
+4. Súbelo al Dataset junto al audio con una **New Version**, o en un Dataset aparte agregado como Input. Luego actualiza el Input del notebook.
+5. Corre con `ACCION = "solo clic"`: ese tema usará tus marcas en vez de la detección.
+
+> No pude verificar el formato exacto que exporta Reaper 7. El lector espera las columnas `#`, `Name` y `Start` (como `M1,C1,0:01.500`), separadas por coma, punto y coma o tab, con tiempos en segundos, m:ss.mmm o h:mm:ss.mmm. Las regiones (`R…`) se ignoran. Si una línea no se entiende, `clic_informe.txt` dice cuál y por qué. Prueba primero con un tema corto.
 
 ## Si algo falla
 | Mensaje o síntoma | Qué hacer |
@@ -84,6 +113,9 @@ Los stems sueltos y los modelos no aparecen en el Output: viven en `/kaggle/temp
 | "Hay N Datasets… / No encuentro el Dataset" | Escribe el nombre exacto en `KAGGLE_DATASET`. Es el que aparece en el panel derecho, debajo de *Input*. |
 | "Los zips no caben en /kaggle/working" | Más de ~55 temas en una ejecución: sube menos temas por Dataset, usa `MODO = "karaoke"` o `FORMATO = "MP3 320"`. |
 | "No hay espacio en /kaggle/temp" | No caben los modelos (~5 GB) más un tema. Prueba con `MODO = "karaoke"` o `SEPARAR_ACUSTICA_ELECTRICA = False` (~1,4 GB menos de modelos). |
+| ⚠ "el clic falló" en un tema | Los stems se guardaron igual. Corre después con `ACCION = "solo clic"` (paso 8). |
+| "No encontré temas ya procesados" (solo clic) | Agrega como Input los `<tema>.zip` o el Output de la versión anterior (paso 8). |
+| Mis marcas `.clic.csv` no se usan | El archivo debe llamarse exactamente `<tema>.clic.csv` y estar en un Input. Revisa en `clic_informe.txt` qué líneas ignoró (por ejemplo, la regla en compases.tiempos). |
 | "El zip de … no se verificó" | No se borró nada: ese tema queda con ERROR y los demás siguen. Vuelve a correr con solo ese tema en el Dataset. |
 | Un tema con ERROR en la tabla | El detalle está en `stems/salida/errores.txt` (Output). Los demás temas siguen igual. |
 | Se cortó a las 12 horas | Divide los temas en dos Datasets y corre una versión con cada uno. |
